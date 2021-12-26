@@ -1,0 +1,214 @@
+** Extensiones
+- CREATE EXTENSION dblink;
+
+** Comandos Generales
+Comentarios: --
+\? ó \h: comandos de la console
+\h comando: ayuda de un comando
+\s: Ver el historial de comandos ejecutados
+
+** Comandos básicos de la consola
+\c db_name: cambiar a una base de datos
+
+\l: listar bases del datos registradas en el motor
+
+\dt: muestra las tablas en la bd actual
+\dn: Listar los esquemas de la base de datos actual
+\df: Listar las funciones disponibles de la base de datos actual
+\dv: Listar las vistas de la base de datos actual
+\du: Listar los usuarios y sus roles de la base de datos actual
+
+\d tabla: describe una tabla de la bd
+
+\g: repetir el ultimo comando ejecutado sobre el motor de la bd (por ti o por otro usuario)
+
+\timing: inicia el contador de tiempo (cronómetro)
+
+** Archivos importantes
+SHOW config_file; permite identificar la ubicacion de los archivos
+postgresql.conf
+pg_hba.conf
+pg_ident.conf
+
+** Comandos de estructuración de BD
+CREATE DATABASE base;
+CREATE TABLE tabla (columnas);
+INSERT INTO tabla(columna) VALUES('dato');
+SELECT * FROM tabla;
+UPDATE tabla SET cammpo = dato WHERE condicion;
+DELETE FROM tabla WHERE condicion;
+TRUNCATE mytable RESTART IDENTITY CASCADE
+
+SELECT current_date; Verifica el formato de fecha de postgre
+
+** Particiones
+- se recomienda para guardar históricos o información que crezca mucho en volúmen
+- crear tabla
+- activar tabla particionada
+- seleccionar columna de particion
+- crear tabla de  partición de la siguiente forma:
+
+CREATE TABLE orders_2021 PARTITION OF orders
+FOR VALUES FROM ('2021-01-01') TO ('2022-01-01')
+
+** Roles
+\dg ó \du: listar roles
+-\h CREATE ROLE name_role: comandos disponibles
+- CREATE ROLE = CREATE USER
+- ALTER ROLE name_role WITH LOGIN; :permite agregar acceso a la funcion de login
+- DROP ROLE name_role; :permite borrar un role creado
+- Las tablas creadas asignan como propietario a su creador
+- tables -> grant wizard: asignar permisos a usuarios sobre las tablas
+- Permitir inserciones asignando permisos en Schemas > Public > Sequences
+
+** Funciones especiales principales
+- ON CONFLICT ... DO ... : actualizar tablas con conflictos
+- RETURNING: retorna los valores registrados luego de un INSERT para confirmar estado
+- LIKE/ILIKE: Búsquedas usando REGEX
+    Comandos:
+	%: uno o cualquier valor
+	_: sólamente uno
+    ILIKE: Insensitive case
+- IS/IS NOT: COMPARACIONES de objetos o especiales (no estándar como varchar)
+
+
+** Funciones especiales avanzadas
+- COALESCE: comparar 2 valores y retornar el que no es nulo
+- NULLIF: comparar 2 valores y retorna NULL si son iguales
+- GREATEST: retorna el objeto mayor 
+- LEAST: retorna el objeto menor
+- Bloques ANÓNIMOS: ingresar condicionales dentro de una consulta
+	Consulta:
+	CASE
+	  WHEN fecha_nacimiento > '2000-01-01'
+  	  THEN 'niño'
+	  ELSE 'adulto'
+	END
+
+** Vistas
+- Volátiles: View > Create + General (nombre) + Code (Consulta)
+- Materializadas: Materialized Views > Create + nombre + consultaSQL
+	- Puede escogerse si se ejecuta luego de crearse o no
+	- Actualizar vista: REFRESH MATERIALIZED VIEW view_name
+
+** PL/SQL: Procedural Language
+RAISE NOTICE: Permite escribir en la consola de logs de postgre
+DO $$
+DECLARE
+  variable1 valor1 :=valor_defecto;
+  variable2 valor2;
+
+  rec record;
+  contador integer :=0;			
+BEGIN
+  FOR rec IN SELECT * FROM pasajero LOOP
+    	RAISE NOTICE 'Nombre pasajero %', rec.nombre;
+	contador := contador + 1;
+  END LOOP;
+  RAISE NOTICE 'Contador: ', contador;
+  INSERT INTO tabla_objetivo (total, tiempo)
+  VALUES (contador, now())
+  
+  RETURN NEW / OLD;  
+END
+$$
+
+- Para guardar la función se debe cambiar DO por:
+CREATE OR REPLACE FUNCTION PL_name()
+ RETURNS void (o el tipo de variable que retorna como integer)
+- Antes de terminar la función debe especificarse el lenguaje:
+LANGUAGE PLPGSQL;
+
+- SELECT PL_name(); :Ejecutar función
+
+- DROP FUNCTION PL_name(); :Eliminar función
+
+** Triggers
+- Acciones que permiten trigger: Delete, update, insert, truncate
+- Crear Trigger:
+
+CREATE TRIGGER my_trigger
+AFTER / BEFORE / INSTEAD OF 
+  INSERT
+ON PASAJERO
+FOR EACH ROW
+EXECUTE PROCEDURE PL_name();
+
+** Conexión a BD remotas
+SELECT * FROM
+dblink ('dbname=remota
+	port=5432
+	host=IPservicio o nombre dominio
+	user=usuario_remoto
+	password=password_remoto',
+	'CONSULTA_SQL A BD REMOTA') 
+	AS datos_remotos (id integer, fecha date, state boolean...); --Formato asignado
+
+- Cruce de información
+SELECT * FROM
+JOIN
+dblink ('dbname=remota
+	port=5432
+	host=IPservicio o nombre dominio
+	user=usuario_remoto
+	password=password_remoto',
+	'CONSULTA_SQL A BD REMOTA') 
+	AS datos_remotos (id integer, fecha date, state boolean...)
+USING (id); -- Esto es igual a: ON (pasajero.id = datos_remotos.id);
+
+BEGIN
+<consultas>
+COMMIT | ROLLBACK
+
+** Backups y Restauración
+DB > Backup
+- Format: 
+	Custom: Único de Postgre que debe restaurarse en PgAdmin
+	Tar: Comprimido con la estructura de la bd
+	Plain: SQL Plano
+	Directory: Estructura sin comprimir de la BD
+
+- Restauración: DB > restore
+
+PgAdmin4
+- Backup: select the db -> backup -> file_name -> backup (without any additional options)
+- Restore: create the db -> restore -> file_name -> restore
+
+** Mantenimiento (recomendable no hacerlo)
+- BD > Mantenimiento
+- Tabla > Mantenimiento
+
+Vacuum:
+- Full: Limpia filas e índices que ya no se aplican
+- Freeze: Detiene los procesos en la tabla hasta terminar la limpieza
+- Analyze: Da un indice de rendimiento para determinar si requiere el mantenimiento
+
+Reindex: Ajustar indices en las tablas
+Cluster: Reorganiza la información en el Disco Duro del cluster
+
+** Réplicas
+
+- Configuración
+
+* Master DB > postgresql.conf:
+
+- wal_level = hot_standby: mantiene los archivos de bitácora hasta que la réplica los tome y los ejecute
+- max_wal_senders = 2 o 3: Cantidad de replicas o enviadores del servicio
+- archive_mode = on: permite almacenar los archivos de réplica para permitir a las réplicas que los lean
+- archive_command = 'cp %p /tmp/%f :copia los archivos a una carpeta temporal (comando está en linux, buscar para windows)
+
+- Agregar IP de la réplica a las IPS de confianza de la master:
+pg_hba.conf
+host replication al IP_replica/32 trust :/32 es una máscara para indicar que es una IP y no un rango
+
+- Actualizar el contenido de la réplica con lo que tenga la master
+- sudo service postgresql stop :detiene el servicio de postgresql
+- rm -rf /var/lib/pssql/data/* :remueve todo el contenido de la bd
+- pg_basebackup -U username -R -D /var/lib/pgsql/data/ --host=xxxx --port=5432
+
+* Replica DB > postgresql.conf:
+hot_standby = on :indica funcionamiento de BD réplica
+
+** Buenas Prácticas 
+
+
